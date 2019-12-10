@@ -101,16 +101,24 @@ aes_shift_rows_next:
 	epilogue
 	ret
 
+;;; aes_add_round_key xors the state with the 4 double word sized "words" of the key schedule
+;;; rdi contains a pointer to the state
+;;; rsi contains a pointer to the key schedule
+;;; rdx contains an offset in the key schedule with which to start
 aes_add_round_key:
 	prologue
 	xor r9,r9		;Counter
+	lea r13,[rsi + rdx * 4]
 aes_add_round_key_next:
 	lea r11,[rdi + r9]
 	move_column_to_r10d r11
-	;; TODO
+	mov r12d,[r13 + r9 * 4]
+	xor r10d,r12d
+	mov eax,r10d
+	move_eax_to_column r11
 	inc r9
 	cmp r9,0x4
-	jae aes_add_round_key_next
+	jb aes_add_round_key_next
 	epilogue
 	ret
 

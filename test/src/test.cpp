@@ -18,11 +18,14 @@
 #define FAILED "[" ANSI_COLOR_RED "Fail" ANSI_RESET "]"
 #define DETAIL_NEWLINE std::endl<<std::setw(TITLE_COLUMNS + RESULT_COLUMNS)<<std::left<<" "
 
+#define Nb 4
+
 extern "C" uint8_t  aes_mul_gf28(uint8_t lhs, uint8_t rhs);
 extern "C" uint32_t aes_mul_poly(uint32_t lhs, uint32_t rhs);
 extern "C" void aes_shift_rows(uint8_t * state);
 extern "C" void aes_mix_columns(uint8_t * state);
 extern "C" void aes_sub_bytes(uint8_t * state);
+extern "C" void aes_add_round_key(uint8_t * state, uint32_t * key_schedule, uint64_t offset);
 
 const static std::string COLUMN_HEADER_TITLE("Test Name:");
 const static std::string COLUMN_HEADER_RESULT("[Result]  ");
@@ -35,7 +38,7 @@ std::string detail(T expected, T result)
 }
 
 template <>
-std::string detail(std::array<uint8_t, 16> expected, std::array<uint8_t, 16> result)
+std::string detail(std::array<uint8_t, Nb*4> expected, std::array<uint8_t, Nb*4> result)
 {
     std::stringstream s;
     std::stringstream s1;
@@ -127,52 +130,76 @@ void test_gf28lib()
     uint8_t gf28t1 = 0x57; // x^6 + x^4 + x^2 + x + 1
     uint8_t gf28t2 = 0x83; // x^7 + x + 1
     uint8_t gf28r1 = aes_mul_gf28(gf28t1,gf28t2);
-    std::cout<<title("Multiply GF2^8:")<<result(&test_equal, static_cast<uint64_t>(0xc1), static_cast<uint64_t>(gf28r1))<<std::endl;
+    std::cout<<title("Multiply GF2^8:")
+	     <<result(&test_equal,
+		      static_cast<uint64_t>(0xc1),
+		      static_cast<uint64_t>(gf28r1))
+	     <<std::endl;
 
     //Given in aes mix columns spec, and aes appendix B step 1
     uint32_t polyt1 = 0x305dbfd4;
     uint32_t polyt2 = 0x03010102;
     uint32_t polyr1 = aes_mul_poly(polyt1, polyt2);
-    std::cout<<title("Multiply Polynomials:")<<result(&test_equal, static_cast<uint64_t>(0xe5816604), static_cast<uint64_t>(polyr1))<<std::endl;
+    std::cout<<title("Multiply Polynomials:")
+	     <<result(&test_equal,
+		      static_cast<uint64_t>(0xe5816604),
+		      static_cast<uint64_t>(polyr1))
+	     <<std::endl;
 }
 
 void test_aeslib()
 {
-    std::array<uint8_t, 16> sub_bytes_arr = {0x19,0xa0,0x9a,0xe9,
-					     0x3d,0xf4,0xc6,0xf8,
-					     0xe3,0xe2,0x8d,0x48,
-					     0xbe,0x2b,0x2a,0x08};
-    std::array<uint8_t, 16> sub_bytes_expected = {0xd4,0xe0,0xb8,0x1e,
-						  0x27,0xbf,0xb4,0x41,
-						  0x11,0x98,0x5d,0x52,
-						  0xae,0xf1,0xe5,0x30};
+    std::array<uint8_t, Nb*4> sub_bytes_arr = {0x19,0xa0,0x9a,0xe9,
+					       0x3d,0xf4,0xc6,0xf8,
+					       0xe3,0xe2,0x8d,0x48,
+					       0xbe,0x2b,0x2a,0x08};
+    std::array<uint8_t, Nb*4> sub_bytes_expected = {0xd4,0xe0,0xb8,0x1e,
+						    0x27,0xbf,0xb4,0x41,
+						    0x11,0x98,0x5d,0x52,
+						    0xae,0xf1,0xe5,0x30};
     aes_sub_bytes(sub_bytes_arr.data());
     std::cout<<title("Sub Bytes:")<<result(&test_arr_equal, sub_bytes_expected, sub_bytes_arr)<<std::endl;
     
     //Given in aes shift rows spec, and aes appendix B step 1
-    std::array<uint8_t, 16> shift_rows_arr = {0xd4,0xe0,0xb8,0x1e,
-					      0x27,0xbf,0xb4,0x41,
-					      0x11,0x98,0x5d,0x52,
-					      0xae,0xf1,0xe5,0x30};
-    std::array<uint8_t, 16> shift_rows_expected = {0xd4,0xe0,0xb8,0x1e,
-						  0xbf,0xb4,0x41,0x27,
-						  0x5d,0x52,0x11,0x98,
-						  0x30,0xae,0xf1,0xe5};
+    std::array<uint8_t, Nb*4> shift_rows_arr = {0xd4,0xe0,0xb8,0x1e,
+						0x27,0xbf,0xb4,0x41,
+						0x11,0x98,0x5d,0x52,
+						0xae,0xf1,0xe5,0x30};
+    std::array<uint8_t, Nb*4> shift_rows_expected = {0xd4,0xe0,0xb8,0x1e,
+						     0xbf,0xb4,0x41,0x27,
+						     0x5d,0x52,0x11,0x98,
+						     0x30,0xae,0xf1,0xe5};
     aes_shift_rows(shift_rows_arr.data());
     std::cout<<title("Shift Rows:")<<result(&test_arr_equal, shift_rows_expected, shift_rows_arr)<<std::endl;
 
     //Given in appendix B step 1
-    std::array<uint8_t, 16> mix_columns_arr = {0xd4,0xe0,0xb8,0x1e,
-					       0xbf,0xb4,0x41,0x27,
-					       0x5d,0x52,0x11,0x98,
-					       0x30,0xae,0xf1,0xe5};
-    std::array<uint8_t, 16> mix_columns_expected = {0x04,0xe0,0x48,0x28,
-						    0x66,0xcb,0xf8,0x06,
-						    0x81,0x19,0xd3,0x26,
-						    0xe5,0x9a,0x7a,0x4c};
+    std::array<uint8_t, Nb*4> mix_columns_arr = {0xd4,0xe0,0xb8,0x1e,
+						 0xbf,0xb4,0x41,0x27,
+						 0x5d,0x52,0x11,0x98,
+						 0x30,0xae,0xf1,0xe5};
+    std::array<uint8_t, Nb*4> mix_columns_expected = {0x04,0xe0,0x48,0x28,
+						      0x66,0xcb,0xf8,0x06,
+						      0x81,0x19,0xd3,0x26,
+						      0xe5,0x9a,0x7a,0x4c};
     aes_mix_columns(mix_columns_arr.data());
     std::cout<<title("Mix Columns:")<<result(&test_arr_equal, mix_columns_expected, mix_columns_arr)<<std::endl;
 
+    std::array<uint8_t, Nb*4> add_round_key_arr = {0x32,0x88,0x31,0xe0,
+						   0x43,0x5a,0x31,0x37,
+						   0xf6,0x30,0x98,0x07,
+						   0xa8,0x8d,0xa2,0x34};
+
+    std::array<uint8_t, Nb*4> add_round_key_expected = {0x19,0xa0,0x9a,0xe9,
+							0x3d,0xf4,0xc6,0xf8,
+							0xe3,0xe2,0x8d,0x48,
+							0xbe,0x2b,0x2a,0x08};
+
+    std::array<uint32_t, 4> add_round_key_schedule = {0x16157e2b,
+						      0xa6d2ae28,
+						      0x8815f7ab,
+						      0x3c4fcf09};
+    aes_add_round_key(add_round_key_arr.data(),add_round_key_schedule.data(),0);
+    std::cout<<title("Add Round Key:")<<result(&test_arr_equal, add_round_key_expected, add_round_key_arr)<<std::endl;
 }
 
 int main()
