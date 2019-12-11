@@ -22,7 +22,7 @@
 
 	;; The first argument is the state pointer,
 	;; the second is the row index (0, 1, 2, or 3 only).
-	%macro move_column_to_r10d 1
+	%macro move_row_to_r10d 1
 	push rcx
 	xor rcx,rcx
 %%move_column_to_nextbyte:
@@ -34,12 +34,12 @@
 	pop rcx
 	%endmacro
 	
-	%macro move_eax_to_column 1
+	%macro move_r10d_to_row 1
 	push rcx
 	xor rcx,rcx
 %%move_eax_to_nextbyte:
-	mov [%1 + rcx * 4],al
-	ror eax,0x8
+	mov [%1 + rcx * 4],r10b
+	ror r10d,0x8
 	inc rcx
 	cmp rcx,0x4
 	jb %%move_eax_to_nextbyte
@@ -85,16 +85,17 @@ aes_shift_rows:
 	prologue
 	mov rcx,0x1
 aes_shift_rows_next:
-	mov ebx,dword[rdi + rcx * 4]
+	lea r11,[rdi + rcx]
+	move_row_to_r10d r11
 	mov al,0x8
 	mul cl
 	push rcx
 
 	mov cl,al
-	ror ebx,cl
+	ror r10d,cl
 	pop rcx
 	
-	mov dword [rdi + rcx * 4],ebx
+	move_r10d_to_row r11
 	inc rcx
 	cmp rcx,0x4
 	jb aes_shift_rows_next
@@ -110,12 +111,10 @@ aes_add_round_key:
 	xor r9,r9		;Counter
 	lea r13,[rsi + rdx * 4]
 aes_add_round_key_next:
-	lea r11,[rdi + r9]
-	move_column_to_r10d r11
+	mov r10d,[rdi + r9 * 4]
 	mov r12d,[r13 + r9 * 4]
 	xor r10d,r12d
-	mov eax,r10d
-	move_eax_to_column r11
+	mov [rdi + r9 * 4],r10d
 	inc r9
 	cmp r9,0x4
 	jb aes_add_round_key_next
@@ -128,8 +127,7 @@ aes_mix_columns:
 	xor rbx,rbx
 aes_mix_columns_next:
 	xor r10,r10
-	lea r15,[rdi + rcx]
-	move_column_to_r10d r15
+	mov r10d,dword[rdi + rcx*4]
 	push rdi
 	push rsi
 	push rcx
@@ -141,7 +139,7 @@ aes_mix_columns_next:
 	pop rcx
 	pop rsi
 	pop rdi
-	move_eax_to_column r15
+	mov [rdi + rcx*4],eax
 	inc rcx
 	cmp rcx,0x4
 	jb aes_mix_columns_next
