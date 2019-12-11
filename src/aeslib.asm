@@ -46,6 +46,15 @@
 	pop rcx
 	%endmacro
 
+	%macro rotword 1
+	%endmacro
+
+	%macro subword 1
+	%endmacro
+
+	%macro move_r12d_rcon 2
+	%endmacro
+
 section .data
 	;; The sbox is defined in the aes standard, and shown in section 5.1.1
 	sbox db 0x63,0x7c,0x77,0x7b,0xf2,0x6b,0x6f,0xc5,0x30,0x01,0x67,0x2b,0xfe,0xd7,0xab,0x76,\
@@ -74,6 +83,42 @@ section .text
 
 	extern aes_mul_gf28
 	extern aes_mul_poly
+	
+;;; Expands a given key to a key schedule
+aes_key_expand:
+	prologue
+	xor rcx,rcx
+aes_key_expand_initial_next:
+	mov r11,[rdi + rcx * 4]
+	mov [rsi + rcx * 4],r11
+	inc rcx
+	cmp rcx,rdx
+	jb aes_key_expand_initial_next
+
+aes_key_expand_next:
+	mov ebx,[rsi + rcx - 1]
+	mov ax,cx
+	div dl
+	cmp ah,0
+	jne aes_key_expand_over_1
+	push rdx
+	rotword ebx
+	subword ebx
+	move_r12d_rcon rcx,rdx
+	xor ebx,r12d
+	pop rdx
+aes_key_expand_over_1:
+	cmp rdx,0x6
+	jb aes_key_expand_over_2
+	cmp ah,0x4
+	jne aes_key_expand_over_2
+	subword ebx
+aes_key_expand_over_2:
+	inc rcx
+	cmp rcx,rdx		;TODO:fix
+	epilogue
+	ret
+	
 ;;; Not yet implemented
 aes_decrypt:
 	prologue
