@@ -47,12 +47,76 @@
 	%endmacro
 
 	%macro rotword 1
+	rol %1,0x8
 	%endmacro
 
 	%macro subword 1
+	push rax
+	push rcx
+	push r15
+	push r14
+	mov eax,%1
+	mov rcx,0x4
+	xor r15,r15
+%%subword_nextbyte:
+	movzx r14,al
+	mov r15b,[sbox + r14]
+	ror r15d,8
+	shr eax,8
+	loop %%subword_nextbyte
+	mov %1,r15d
+	pop r14
+	pop r15
+	pop rcx
+	pop rax
 	%endmacro
 
 	%macro move_r12d_rcon 2
+	push r15
+	push r14
+	push rcx
+	push rax
+	mov r15,0x8000000000000000
+	mov ax,%1
+	div %2
+	movzx rcx,al
+%%move_r12d_rcon_nextloop:
+	rol r15,1
+	cmp r15,0x100
+	jb %%over
+	xor r15,0x011b
+%%over:
+	loop %%move_r12d_rcon_nextloop
+	mov r12d,r15d
+	shl r12d,0x18
+	pop rax
+	pop rcx
+	pop r14
+	pop r15
+	%endmacro
+
+	%macro move_column_bytewise_r10d 1
+	push rcx
+	xor rcx,rcx
+%%next_byte:
+	shl r10d,8
+	mov r10b,[%1 + rcx]
+	inc rcx
+	cmp rcx,0x4
+	jb %%next_byte
+	pop rcx
+	%endmacro
+
+	%macro move_r10d_bytewise_column 1
+	push rcx
+	xor rcx,rcx
+%%next_byte:
+	rol r10d,8
+	mov [%1 + rcx],r10b
+	inc rcx
+	cmp rcx,0x4
+	jb %%next_byte
+	pop rcx
 	%endmacro
 
 section .data
@@ -80,6 +144,7 @@ section .text
 	global aes_add_round_key
 	global aes_mix_columns
 	global aes_sub_bytes
+	global aes_key_expand
 
 	extern aes_mul_gf28
 	extern aes_mul_poly
@@ -89,33 +154,41 @@ aes_key_expand:
 	prologue
 	xor rcx,rcx
 aes_key_expand_initial_next:
-	mov r11,[rdi + rcx * 4]
-	mov [rsi + rcx * 4],r11
+	mov r11d,[rdi + rcx * 4]
+	mov [rsi + rcx * 4],r11d
 	inc rcx
 	cmp rcx,rdx
 	jb aes_key_expand_initial_next
 
 aes_key_expand_next:
-	mov ebx,[rsi + rcx - 1]
+	mov ebx,[rsi + rcx * 4 - 4]
 	mov ax,cx
 	div dl
 	cmp ah,0
 	jne aes_key_expand_over_1
-	push rdx
 	rotword ebx
 	subword ebx
-	move_r12d_rcon rcx,rdx
+	move_r12d_rcon cx,dl
 	xor ebx,r12d
-	pop rdx
 aes_key_expand_over_1:
 	cmp rdx,0x6
-	jb aes_key_expand_over_2
+	jbe aes_key_expand_over_2
 	cmp ah,0x4
 	jne aes_key_expand_over_2
 	subword ebx
 aes_key_expand_over_2:
+	mov r12,rcx			; Copy i
+	sub r12,rdx			; Sub Nk
+	mov r13d,[rsi + r12 * 4]	; Get that key word
+	xor ebx,r13d
+	mov [rsi + rcx * 4],ebx
 	inc rcx
-	cmp rcx,rdx		;TODO:fix
+	mov r12b,dl			; Nk in r12b
+	add r12b,0x7			; Get Nr+1 from Nk
+	mov ax,0x4
+	mul r12b
+	cmp cl,al
+	jb aes_key_expand_next
 	epilogue
 	ret
 	
@@ -156,10 +229,11 @@ aes_add_round_key:
 	xor r9,r9		;Counter
 	lea r13,[rsi + rdx * 4]
 aes_add_round_key_next:
-	mov r10d,[rdi + r9 * 4]
+	lea rbx,[rdi + r9 * 4]
+	move_column_bytewise_r10d rbx
 	mov r12d,[r13 + r9 * 4]
 	xor r10d,r12d
-	mov [rdi + r9 * 4],r10d
+	move_r10d_bytewise_column rbx
 	inc r9
 	cmp r9,0x4
 	jb aes_add_round_key_next
@@ -208,27 +282,38 @@ aes_sub_bytes_next:
 ;;; Parameters:
 ;;; 	rdi contains a pointer to the state array
 ;;; 	rsi contains a pointer to the key schedule array
-;;; 	rcx contains Nr (per aes standard)
+;;; 	rdx contains Nr (per aes standard)
 aes_encrypt:
 	prologue
 
-	mov r10,rcx
-	xor rcx,rcx
+	mov rbx,rdx
+	xor rdx,rdx
 	call aes_add_round_key
-	inc rcx
+	inc rdx
 aes_encrypt_next_round:
 	call aes_sub_bytes
 	call aes_shift_rows
 	call aes_mix_columns
+
+	mov al,0x4
+	mul dl
+	push rdx
+	movzx rdx,ax
+	call aes_add_round_key	;This one takes rdi, rsi, and rdx, the rest just take rdi
+	pop rdx
 	
-	call aes_add_round_key	;This one takes rdi, rsi, and rcx, the rest just take rdi
-	
-	inc rcx
-	cmp rcx,r10
+	inc rdx
+	cmp rdx,rbx
 	jb aes_encrypt_next_round
 
 	call aes_sub_bytes
 	call aes_shift_rows
-	call aes_add_round_key	;Here rcx is already correct since it will contain Nr
+
+	mov al,0x4
+	mul dl
+	push rdx
+	movzx rdx,ax
+	call aes_add_round_key	;Here rdx is already correct since it will contain Nr
+	pop rdx
 	epilogue
 	ret

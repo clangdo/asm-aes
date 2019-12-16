@@ -26,6 +26,8 @@ extern "C" void aes_shift_rows(uint8_t * state);
 extern "C" void aes_mix_columns(uint8_t * state);
 extern "C" void aes_sub_bytes(uint8_t * state);
 extern "C" void aes_add_round_key(uint8_t * state, uint32_t * key_schedule, uint64_t offset);
+extern "C" void aes_key_expand(uint32_t * key, uint32_t * key_schedule, uint64_t Nk);
+extern "C" void aes_encrypt(uint8_t * state, uint32_t * key_schedule, uint64_t Nr);
 
 const static std::string COLUMN_HEADER_TITLE("Test Name:");
 const static std::string COLUMN_HEADER_RESULT("[Result]  ");
@@ -124,6 +126,11 @@ bool test_arr_equal(std::array<uint8_t, 16> expected, std::array<uint8_t, 16> re
     return std::equal(std::begin(expected), std::end(expected), std::begin(result));
 }
 
+bool test_arr_equal(std::array<uint32_t, 4> expected, std::array<uint32_t, 4> result)
+{
+    return std::equal(std::begin(expected), std::end(expected), std::begin(result));
+}
+
 void test_gf28lib()
 {
     //The below test is given in the aes specification in an example.
@@ -174,10 +181,10 @@ void test_aeslib()
 							       0xe3,0xe2,0x8d,0x48,
 							       0xbe,0x2b,0x2a,0x08});
 
-    std::array<uint32_t, 4> add_round_key_schedule = {0x16157e2b,
-						      0xa6d2ae28,
-						      0x8815f7ab,
-						      0x3c4fcf09};
+    std::array<uint32_t, 4> add_round_key_schedule = {0x2b7e1516,
+						      0x28aed2a6,
+						      0xabf71588,
+						      0x09cf4f3c};
     aes_add_round_key(add_round_key_arr.data(),add_round_key_schedule.data(),0);
     std::cout<<title("Add Round Key:")<<result(&test_arr_equal, add_round_key_expected, add_round_key_arr)<<std::endl;
     
@@ -215,6 +222,29 @@ void test_aeslib()
 							     0xe5,0x9a,0x7a,0x4c});
     aes_mix_columns(mix_columns_arr.data());
     std::cout<<title("Mix Columns:")<<result(&test_arr_equal, mix_columns_expected, mix_columns_arr)<<std::endl;
+
+    std::array<uint32_t, Nb> key_expand_arr = {0x2b7e1516,0x28aed2a6,
+					       0xabf71588,0x09cf4f3c};
+    std::array<uint32_t, Nb * (11)> key_sched;
+    std::array<uint32_t, Nb> key_sched_expected = {0xd014f9a8,0xc9ee2589,
+						   0xe13f0cc8,0xb6630ca6};
+    aes_key_expand(key_expand_arr.data(), key_sched.data(), 4);
+    std::array<uint32_t, Nb> key_sched_end;
+    std::copy(key_sched.begin() + 40, key_sched.end(), key_sched_end.begin());
+    std::cout<<title("Key Expansion:")<<result(&test_arr_equal,key_sched_expected,key_sched_end)<<std::endl;
+
+
+    std::array<uint8_t, Nb * 4> encrypt_data = swaprc({0x32,0x88,0x31,0xe0,
+						       0x43,0x5a,0x31,0x37,
+						       0xf6,0x30,0x98,0x07,
+						       0xa8,0x8d,0xa2,0x34});
+    std::array<uint8_t, Nb * 4> encrypt_expected = swaprc({0x39,0x02,0xdc,0x19,
+							   0x25,0xdc,0x11,0x6a,
+							   0x84,0x09,0x85,0x0b,
+							   0x1d,0xfb,0x97,0x32});
+
+    aes_encrypt(encrypt_data.data(),key_sched.data(),10);
+    std::cout<<title("Encryption:")<<result(&test_arr_equal,encrypt_data,encrypt_expected)<<std::endl;
 }
 
 int main()
